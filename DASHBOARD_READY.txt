@@ -1,0 +1,8 @@
+✅ FIXED!
+
+The issue was emoji characters in print statements that Windows terminal couldn't encode.
+
+Now refresh: http://127.0.0.1:8000/admin-ui/
+
+You should see your cases now!
+

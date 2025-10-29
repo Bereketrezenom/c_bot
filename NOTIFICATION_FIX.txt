@@ -1,0 +1,19 @@
+NOTIFICATION FIXED!
+
+The issue was that `bot.send_message()` is an async function that needs to be awaited.
+
+I fixed it by wrapping it with `asyncio.run()`:
+
+```python
+asyncio.run(bot.send_message(
+    chat_id=int(counselor_id),
+    text=(...)
+))
+```
+
+The code is now reloaded. Please:
+1. Go to the dashboard
+2. Assign a case to yourself (Becky)
+3. You should now receive the notification in Telegram!
+
+The warning you saw in the terminal is now fixed.

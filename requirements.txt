@@ -1,0 +1,7 @@
+Django==4.2.7
+python-telegram-bot==20.7
+firebase-admin==6.2.0
+python-dotenv==1.0.0
+django-cors-headers==4.3.1
+requests==2.31.0
+

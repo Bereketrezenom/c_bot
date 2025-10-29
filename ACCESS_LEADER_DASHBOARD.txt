@@ -1,0 +1,48 @@
+🎯 HOW TO ACCESS YOUR LEADER DASHBOARD
+
+✅ SERVER IS RUNNING!
+
+Open your browser and go to:
+👉 http://127.0.0.1:8000/admin-ui/
+
+---
+
+📋 WHAT YOU'LL SEE:
+
+1. **Statistics Bar** - Total cases, pending, assigned, active
+2. **Case Cards** - All cases from users with:
+   - Case ID
+   - User info
+   - Problem description
+   - Status (pending/assigned/active/closed)
+   - Assign button for pending cases
+
+3. **Assign Cases**:
+   - Select a counselor from dropdown
+   - Click "Assign Case" button
+   - Counselor gets notified via Telegram!
+
+---
+
+🤖 BOT IS ALSO RUNNING!
+
+The Telegram bot is running separately in another terminal and handling:
+- User messages from Telegram
+- Saving cases to Firebase
+- Notifications
+
+---
+
+🎯 WHAT YOU NEED TO DO:
+
+1. Open: http://127.0.0.1:8000/admin-ui/
+2. You'll see all pending cases
+3. Assign counselors to cases
+4. Watch them get notified on Telegram!
+
+---
+
+💡 TIP:
+
+The dashboard auto-refreshes every 10 seconds to show new cases!
+

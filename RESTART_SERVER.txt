@@ -1,0 +1,8 @@
+Copy and paste these commands one by one:
+
+1. Stop the server (press CTRL+C)
+2. venv\Scripts\activate
+3. python manage.py runserver
+
+Then go to: http://localhost:8000/admin-ui/
+

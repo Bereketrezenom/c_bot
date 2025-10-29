@@ -1,0 +1,20 @@
+🔍 TROUBLESHOOTING STEPS:
+
+1. Refresh your browser at: http://127.0.0.1:8000/admin-ui/
+
+2. Look at your Django server terminal (where you ran "runserver")
+
+You should see logs like:
+   🔍 API called: /admin-ui/api/cases/
+   📊 Firebase service: <FirebaseService object>
+   🔎 Fetching cases from Firebase...
+   📋 Found case: YS7QBc1zyf06b...
+
+OR if there's an error:
+   ❌ No Firebase service!
+   ❌ Error: [error message]
+
+---
+
+Please copy and paste what appears in the Django terminal when you refresh the dashboard!
+

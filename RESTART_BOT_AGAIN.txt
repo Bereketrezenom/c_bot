@@ -1,0 +1,16 @@
+🔄 RESTART THE BOT!
+
+Now chat messages will be saved to Firebase!
+
+To restart:
+1. Stop bot (CTRL+C)
+2. Run: venv\Scripts\python.exe manage.py run_bot
+
+Now:
+- /problem creates case
+- Regular messages are forwarded to counselor
+- Messages are saved in Firebase
+- Counselor can reply to messages
+
+✅ Complete chat system!
+

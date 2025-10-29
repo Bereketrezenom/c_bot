@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Counseling Bot - Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dashboard-header h1 {
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .refresh-btn {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: white;
+            color: #667eea;
+        }
+
+        .dashboard-content {
+            padding: 40px;
+        }
+
+        .cases-container {
+            display: grid;
+            gap: 20px;
+        }
+
+        .case-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .case-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .case-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .case-id {
+            font-size: 20px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .case-status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-pending { 
+            background: #fff3cd; 
+            color: #856404; 
+        }
+        .status-assigned { 
+            background: #d1ecf1; 
+            color: #0c5460; 
+        }
+        .status-active { 
+            background: #d4edda; 
+            color: #155724; 
+        }
+        .status-closed { 
+            background: #f8d7da; 
+            color: #721c24; 
+        }
+
+        .case-info {
+            margin: 12px 0;
+            color: #666;
+            font-size: 15px;
+        }
+
+        .case-info strong {
+            color: #333;
+            margin-right: 8px;
+        }
+
+        .case-problem {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+            color: #333;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .assign-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .assign-form {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .counselor-select {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+        }
+
+        .counselor-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .assign-btn, .view-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .assign-btn:hover, .view-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .view-btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        .loading i {
+            font-size: 48px;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .no-cases {
+            text-align: center;
+            padding: 60px;
+            color: #999;
+            font-size: 18px;
+        }
+
+        .no-cases i {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <h1><i class="fas fa-headset"></i> Counseling Bot - Admin Dashboard</h1>
+            <button class="refresh-btn" onclick="loadCases()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+
+        <div class="dashboard-content">
+            <div class="stats-bar" id="stats-bar">
+                <!-- Stats will be inserted here -->
+            </div>
+
+            <div id="cases-container">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading cases...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let counselors = [];
+
+        // Load counselors on startup
+        async function loadCounselors() {
+            try {
+                const response = await fetch('/admin-ui/api/counselors/');
+                const data = await response.json();
+                counselors = data.counselors || [];
+                updateStats();
+            } catch (error) {
+                console.error('Error loading counselors:', error);
+            }
+        }
+
+        // Load and display cases
+        async function loadCases() {
+            const container = document.getElementById('cases-container');
+            container.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i><p>Loading cases...</p></div>';
+            
+            try {
+                const response = await fetch('/admin-ui/api/cases/');
+                const data = await response.json();
+                
+                if (data.error && data.cases && data.cases.length === 0) {
+                    container.innerHTML = '<div class="no-cases"><p style="color: red;">Error: ' + data.error + '</p></div>';
+                    return;
+                }
+                
+                const cases = data.cases || [];
+                updateStats(cases);
+                
+                if (cases.length === 0) {
+                    container.innerHTML = '<div class="no-cases"><i class="fas fa-inbox"></i><p>No cases yet. Waiting for users to send problems...</p></div>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                
+                cases.forEach(caseData => {
+                    const card = createCaseCard(caseData);
+                    container.appendChild(card);
+                });
+                
+            } catch (error) {
+                container.innerHTML = '<div class="no-cases"><p style="color: red;">Error loading cases: ' + error + '</p></div>';
+            }
+        }
+
+        // Update statistics
+        function updateStats(cases = []) {
+            const pending = cases.filter(c => c.status === 'pending').length;
+            const assigned = cases.filter(c => c.status === 'assigned').length;
+            const active = cases.filter(c => c.status === 'active').length;
+            const total = cases.length;
+
+            const statsHTML = `
+                <div class="stat-card">
+                    <i class="fas fa-users"></i>
+                    <div class="stat-number">${total}</div>
+                    <div class="stat-label">Total Cases</div>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <i class="fas fa-clock"></i>
+                    <div class="stat-number">${pending}</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <i class="fas fa-user-check"></i>
+                    <div class="stat-number">${assigned}</div>
+                    <div class="stat-label">Assigned</div>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                    <i class="fas fa-comments"></i>
+                    <div class="stat-number">${active}</div>
+                    <div class="stat-label">Active</div>
+                </div>
+            `;
+            document.getElementById('stats-bar').innerHTML = statsHTML;
+        }
+
+        // Create case card
+        function createCaseCard(caseData) {
+            const card = document.createElement('div');
+            card.className = 'case-card';
+            
+            const statusClass = `status-${caseData.status || 'pending'}`;
+            const statusEmoji = {
+                'pending': '⏳',
+                'assigned': '👤',
+                'active': '💬',
+                'closed': '✅'
+            }[caseData.status] || '📄';
+            
+            card.innerHTML = `
+                <div class="case-header">
+                    <div class="case-id">${statusEmoji} Case ID: ${caseData.id.substring(0, 8).toUpperCase()}</div>
+                    <div class="case-status ${statusClass}">${caseData.status || 'pending'}</div>
+                </div>
+                
+                <div class="case-info">
+                    <i class="fas fa-user"></i> <strong>User:</strong> ${caseData.user_info?.first_name || 'Unknown'} (@${caseData.user_info?.username || 'N/A'})
+                </div>
+                
+                <div class="case-info">
+                    <i class="fas fa-calendar"></i> <strong>Created:</strong> ${new Date(caseData.created_at).toLocaleString()}
+                </div>
+                
+                ${caseData.assigned_counselor_id ? `
+                    <div class="case-info">
+                        <i class="fas fa-user-md"></i> <strong>Assigned to:</strong> ${caseData.counselor_info?.first_name || 'Unknown'} (@${caseData.counselor_info?.username || 'N/A'})
+                    </div>
+                ` : ''}
+                
+                <div class="case-problem">
+                    <strong><i class="fas fa-question-circle"></i> Problem:</strong><br>
+                    ${caseData.problem || 'No description'}
+                </div>
+                
+                ${caseData.messages && caseData.messages.length > 0 ? `
+                    <div class="case-info">
+                        <i class="fas fa-comments"></i> <strong>Messages:</strong> ${caseData.messages.length} conversation(s)
+                    </div>
+                ` : ''}
+                
+                ${caseData.status === 'pending' ? `
+                    <div class="assign-section">
+                        <form class="assign-form" onsubmit="assignCase('${caseData.id}', event); return false;">
+                            <select class="counselor-select" id="counselor-${caseData.id}" required>
+                                <option value="">Select a counselor...</option>
+                            </select>
+                            <button type="submit" class="assign-btn">
+                                <i class="fas fa-paper-plane"></i> Assign Case
+                            </button>
+                        </form>
+                    </div>
+                ` : ''}
+            `;
+            
+            // Populate counselor dropdown
+            if (caseData.status === 'pending') {
+                const select = card.querySelector(`#counselor-${caseData.id}`);
+                counselors.forEach(counselor => {
+                    const option = document.createElement('option');
+                    option.value = counselor.telegram_id;
+                    option.textContent = `${counselor.first_name} (@${counselor.username}) - ${counselor.role}`;
+                    select.appendChild(option);
+                });
+            }
+            
+            return card;
+        }
+
+        // Assign case to counselor
+        async function assignCase(caseId, event) {
+            event.preventDefault();
+            const select = document.getElementById(`counselor-${caseId}`);
+            const counselorId = select.value;
+            
+            if (!counselorId) {
+                alert('Please select a counselor');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin-ui/api/cases/${caseId}/assign/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({ counselor_id: counselorId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Case assigned successfully! The counselor has been notified.');
+                    loadCases();
+                } else {
+                    alert('❌ Error: ' + (data.error || 'Failed to assign case'));
+                }
+            } catch (error) {
+                alert('❌ Error assigning case: ' + error);
+            }
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Initialize
+        loadCounselors();
+        loadCases();
+    </script>
+</body>
+</html>
+

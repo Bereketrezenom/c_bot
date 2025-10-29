@@ -1,0 +1,301 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    .cases-container {
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .case-card {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .case-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    .case-id {
+        font-weight: bold;
+        color: #1976d2;
+        font-size: 16px;
+    }
+    .case-status {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-assigned { background: #d1ecf1; color: #0c5460; }
+    .status-active { background: #d4edda; color: #155724; }
+    .status-closed { background: #f8d7da; color: #721c24; }
+    .case-info {
+        margin: 10px 0;
+        color: #666;
+    }
+    .case-info strong {
+        color: #333;
+        margin-right: 8px;
+    }
+    .case-problem {
+        background: #f5f5f5;
+        padding: 12px;
+        border-radius: 4px;
+        margin: 10px 0;
+        color: #333;
+    }
+    .assign-section {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #e0e0e0;
+    }
+    .assign-btn {
+        background: #28a745;
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-right: 10px;
+    }
+    .assign-btn:hover {
+        background: #218838;
+    }
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+        border: none;
+        padding: 6px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .counselor-select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin: 10px 0;
+    }
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    .refresh-btn {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cases-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1>📋 Counseling Cases Management</h1>
+        <button class="refresh-btn" onclick="loadCases()">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+    </div>
+    
+    <div id="cases-container">
+        <div class="loading">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+            <p>Loading cases...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+let counselors = [];
+
+// Load counselors
+async function loadCounselors() {
+    try {
+        const response = await fetch('/admin/bot/users/api/');
+        const data = await response.json();
+        counselors = data.users || [];
+    } catch (error) {
+        console.error('Error loading counselors:', error);
+    }
+}
+
+// Load cases
+async function loadCases() {
+    const container = document.getElementById('cases-container');
+    container.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Loading cases...</p></div>';
+    
+    try {
+        const response = await fetch('/admin/bot/cases/api/');
+        const data = await response.json();
+        
+        if (data.error) {
+            container.innerHTML = '<div style="color: red;">Error: ' + data.error + '</div>';
+            return;
+        }
+        
+        const cases = data.cases || [];
+        
+        if (cases.length === 0) {
+            container.innerHTML = '<div class="loading"><p>No cases found.</p></div>';
+            return;
+        }
+        
+        container.innerHTML = '';
+        
+        cases.forEach(case_data => {
+            const card = createCaseCard(case_data);
+            container.appendChild(card);
+        });
+        
+    } catch (error) {
+        container.innerHTML = '<div style="color: red;">Error loading cases: ' + error + '</div>';
+    }
+}
+
+function createCaseCard(case_data) {
+    const card = document.createElement('div');
+    card.className = 'case-card';
+    
+    const statusClass = `status-${case_data.status || 'pending'}`;
+    const statusEmoji = {
+        'pending': '⏳',
+        'assigned': '👤',
+        'active': '💬',
+        'closed': '✅'
+    }[case_data.status] || '📄';
+    
+    card.innerHTML = `
+        <div class="case-header">
+            <div class="case-id">${statusEmoji} Case ${case_data.id.substring(0, 8)}</div>
+            <div class="case-status ${statusClass}">${case_data.status || 'pending'}</div>
+        </div>
+        
+        <div class="case-info">
+            <strong>User:</strong> ${case_data.user_info?.first_name || 'Unknown'} (@${case_data.user_info?.username || 'N/A'})
+        </div>
+        
+        <div class="case-info">
+            <strong>Created:</strong> ${new Date(case_data.created_at).toLocaleString()}
+        </div>
+        
+        ${case_data.assigned_counselor_id ? `
+            <div class="case-info">
+                <strong>Assigned to:</strong> ${case_data.counselor_info?.first_name || 'Unknown'} (@${case_data.counselor_info?.username || 'N/A'})
+            </div>
+        ` : ''}
+        
+        <div class="case-problem">
+            <strong>Problem:</strong><br>
+            ${case_data.problem || 'No description'}
+        </div>
+        
+        ${case_data.messages && case_data.messages.length > 0 ? `
+            <div class="case-info">
+                <strong>Messages:</strong> ${case_data.messages.length}
+            </div>
+        ` : ''}
+        
+        ${case_data.status === 'pending' ? `
+            <div class="assign-section" id="assign-section-${case_data.id}">
+                <select class="counselor-select" id="counselor-${case_data.id}">
+                    <option value="">Select Counselor...</option>
+                </select>
+                <button class="assign-btn" onclick="assignCase('${case_data.id}')">
+                    Assign Case
+                </button>
+            </div>
+        ` : ''}
+    `;
+    
+    // Populate counselor dropdown if pending
+    if (case_data.status === 'pending') {
+        const select = card.querySelector(`#counselor-${case_data.id}`);
+        counselors.forEach(counselor => {
+            if (counselor.role === 'counselor' || counselor.role === 'leader') {
+                const option = document.createElement('option');
+                option.value = counselor.telegram_id;
+                option.textContent = `${counselor.first_name} (@${counselor.username}) - ${counselor.role}`;
+                select.appendChild(option);
+            }
+        });
+    }
+    
+    return card;
+}
+
+async function assignCase(caseId) {
+    const select = document.getElementById(`counselor-${caseId}`);
+    const counselorId = select.value;
+    
+    if (!counselorId) {
+        alert('Please select a counselor');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/admin/bot/cases/${caseId}/assign/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                counselor_id: counselorId,
+                leader_id: null  // You might want to get this from current user
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Case assigned successfully! The counselor has been notified.');
+            loadCases();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to assign case'));
+        }
+    } catch (error) {
+        alert('Error assigning case: ' + error);
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Initialize
+loadCounselors();
+loadCases();
+
+// Auto-refresh every 30 seconds
+setInterval(loadCases, 30000);
+</script>
+{% endblock %}
+

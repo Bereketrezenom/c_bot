@@ -1,0 +1,7 @@
+🔄 Please RESTART the Django server:
+
+1. Press CTRL+C in the terminal where Django is running
+2. Run: venv\Scripts\python.exe manage.py runserver
+
+The dashboard should now load without Firebase connection errors!
+
