@@ -3,9 +3,10 @@ Simple standalone bot runner.
 """
 import os
 import asyncio
+import re
 import logging
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from django.conf import settings
 
@@ -69,17 +70,43 @@ def build_case_label(service, counselor_id, case_dict):
 
 
 def build_case_tag(service, counselor_id, case_dict):
-    """Return a compact hashtag like '#case1' for subtle tagging."""
+    """Return a compact, stable hashtag. Always includes a short id suffix to avoid ambiguity.
+    Example: '#case1-abc' or '#case-abc' if index can't be determined.
+    """
+    short = (case_dict.get('id', '')[:3] or '').lower()
     try:
         cases = service.get_counselor_cases(str(counselor_id)) or []
         active = [c for c in cases if c.get('status') in ['assigned', 'active']]
-        active.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
+        # Use created_at primarily for stability; fallback to updated_at
+        active.sort(key=lambda c: (c.get('created_at') or c.get('updated_at') or ''), reverse=True)
         idx = next((i for i, c in enumerate(active) if c.get('id') == case_dict.get('id')), None)
         if idx is not None:
-            return f"#case{idx + 1}"
+            return f"#case{idx + 1}-{short}"
     except Exception:
         pass
-    return f"#case{(case_dict.get('id','')[:3] or '').lower()}"
+    return f"#case-{short}"
+
+
+def build_switch_keyboard(service, counselor_id, case_dict):
+    """If counselor has exactly 2 active cases, suggest switching to the OTHER one.
+    Returns an InlineKeyboardMarkup or None.
+    """
+    try:
+        cases = service.get_counselor_cases(str(counselor_id)) or []
+        active = [c for c in cases if c.get('status') in ['assigned', 'active']]
+        active.sort(
+            key=lambda c: (c.get('created_at') or c.get('updated_at') or ''),
+            reverse=True,
+        )
+        if len(active) == 2:
+            other = active[0] if active[1].get('id') == case_dict.get('id') else active[1]
+            tag = build_case_tag(service, counselor_id, other)
+            return InlineKeyboardMarkup(
+                [[InlineKeyboardButton(text=f"Switch to {tag}", callback_data=f"switch:{other.get('id')}")]]
+            )
+    except Exception:
+        pass
+    return None
 
 # Counselor-only keyboard
 COUNSELOR_MENU = ReplyKeyboardMarkup(
@@ -438,6 +465,33 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Main menu:", reply_markup=kb)
 
 
+async def switch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline 'Switch to #case' buttons."""
+    query = update.callback_query
+    if not query or not query.data or not query.data.startswith('switch:'):
+        return
+    case_id = query.data.split(':', 1)[1]
+    await query.answer()
+    service = get_firebase_service()
+    user = update.effective_user
+    try:
+        user_data = service.get_user(user.id)
+        if not user_data or user_data.get('role') not in ['counselor', 'leader']:
+            await query.message.reply_text("Only counselors can switch cases.")
+            return
+        case = service.get_case(case_id)
+        if not case or str(case.get('assigned_counselor_id')) != str(user.id):
+            await query.message.reply_text("Case not found in your assignments.")
+            return
+        counselor_active_case_selection[user.id] = case_id
+        await query.message.reply_text(
+            f"Switched to {build_case_label(service, user.id, case)}. Your replies will go to the user.",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        await query.message.reply_text(f"Error switching: {e}")
+
+
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Clear counselor's current case selection."""
     user = update.effective_user
@@ -568,6 +622,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if text.startswith('/end'):
         await end_command(update, context)
+        return
+    # Quick command: /case1 or /case2-xxx → switch by index
+    m = re.match(r"^/case(\d+)(?:-[A-Za-z0-9]+)?$", text)
+    if m:
+        index = int(m.group(1)) - 1
+        cases = service.get_counselor_cases(str(user.id)) or []
+        active = [c for c in cases if c.get('status') in ['assigned', 'active']]
+        active.sort(key=lambda c: (c.get('created_at') or c.get('updated_at') or ''), reverse=True)
+        if 0 <= index < len(active):
+            chosen = active[index]
+            counselor_active_case_selection[user.id] = chosen['id']
+            await update.message.reply_text(
+                f"Switched to {build_case_label(service, user.id, chosen)}. Your replies will go to the user.",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text("Index out of range.")
         return
     if text.startswith('/setname'):
         # Let the defensive router handle it
@@ -704,10 +775,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 # Add a small inline-style tag right under counselor's own message
                 try:
-                    await update.message.reply_text(
-                        f"_{build_case_tag(service, user.id, target_case)}_",
-                        parse_mode='Markdown'
-                    )
+                    kb = build_switch_keyboard(service, user.id, target_case)
+                    if kb:
+                        await update.message.reply_text(
+                            f"_{build_case_tag(service, user.id, target_case)}_",
+                            parse_mode='Markdown',
+                            reply_markup=kb
+                        )
+                    else:
+                        await update.message.reply_text(
+                            f"_{build_case_tag(service, user.id, target_case)}_",
+                            parse_mode='Markdown'
+                        )
                 except Exception:
                     pass
             except Exception as e:
@@ -773,13 +852,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Forward to counselor
     try:
-        await context.bot.send_message(
-            chat_id=int(counselor_id),
-            text=(
-                f"📩 Message from user {user.first_name or ''} ({user.id}):\n\n{message_text}\n\n_{build_case_tag(service, counselor_id, case)}_"
-            ),
-            parse_mode='Markdown'
-        )
+        kb = build_switch_keyboard(service, counselor_id, case)
+        if kb:
+            await context.bot.send_message(
+                chat_id=int(counselor_id),
+                text=(
+                    f"📩 Message from user {user.first_name or ''} ({user.id}):\n\n{message_text}\n\n_{build_case_tag(service, counselor_id, case)}_"
+                ),
+                parse_mode='Markdown',
+                reply_markup=kb
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=int(counselor_id),
+                text=(
+                    f"📩 Message from user {user.first_name or ''} ({user.id}):\n\n{message_text}\n\n_{build_case_tag(service, counselor_id, case)}_"
+                ),
+                parse_mode='Markdown'
+            )
         # Suppress per-message confirmation to the user
     except Exception as e:
         logger.error(f"Error forwarding message: {e}")
@@ -810,6 +900,9 @@ def main():
     application.add_handler(CommandHandler("switch", switch_command))
     application.add_handler(CommandHandler("register_counselor", register_counselor_command))
     application.add_handler(CommandHandler("help", help_command))
+    # Inline switch button
+    from telegram.ext import CallbackQueryHandler
+    application.add_handler(CallbackQueryHandler(switch_callback, pattern=r'^switch:'))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     logger.info("Bot is running...")
