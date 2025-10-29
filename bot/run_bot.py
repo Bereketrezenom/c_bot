@@ -13,6 +13,28 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 
+# Temporary compatibility patch for python-telegram-bot on Python 3.13
+def _patch_ptb_slots_for_py313():
+    try:
+        from telegram.ext import _updater as _ptb_updater  # type: ignore
+        Updater = getattr(_ptb_updater, 'Updater', None)
+        if Updater is not None and hasattr(Updater, '__slots__'):
+            slots = list(Updater.__slots__)
+            needed = ['_Updater__polling_cleanup_cb']
+            changed = False
+            for name in needed:
+                if name not in slots:
+                    slots.append(name)
+                    changed = True
+            if changed:
+                Updater.__slots__ = tuple(slots)
+                logger.warning("Applied PTB Updater __slots__ patch for Python 3.13 compatibility")
+    except Exception as e:
+        logger.warning(f"Skipping PTB compatibility patch: {e}")
+
+
+_patch_ptb_slots_for_py313()
+
 # Firebase lazy import
 firebase_service = None
 """In-memory selection of active case per counselor (telegram_id -> case_id)."""
@@ -22,7 +44,49 @@ counselor_active_case_selection = {}
 MAIN_MENU = ReplyKeyboardMarkup(
     [
         [KeyboardButton("🆕 New problem"), KeyboardButton("📋 My cases")],
-        [KeyboardButton("🔀 Switch case"), KeyboardButton("❓ Help")],
+        [KeyboardButton("🔀 Switch case"), KeyboardButton("🔒 End chat")],
+        [KeyboardButton("❓ Help")],
+    ],
+    resize_keyboard=True
+)
+
+# Helpers
+def build_case_label(service, counselor_id, case_dict):
+    """Return a stable, human-friendly label like 'Case #1 [Alias]' for a case.
+    Index is computed from counselor's assigned/active cases, newest first.
+    Falls back to short id if not found.
+    """
+    try:
+        cases = service.get_counselor_cases(str(counselor_id)) or []
+        active = [c for c in cases if c.get('status') in ['assigned', 'active']]
+        active.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
+        idx = next((i for i, c in enumerate(active) if c.get('id') == case_dict.get('id')), None)
+        base = f"Case #{idx + 1}" if idx is not None else f"Case {case_dict.get('id','')[:8]}"
+        alias = case_dict.get('alias')
+        return f"{base} [{alias}]" if alias else base
+    except Exception:
+        return f"Case {case_dict.get('id','')[:8]}"
+
+
+def build_case_tag(service, counselor_id, case_dict):
+    """Return a compact hashtag like '#case1' for subtle tagging."""
+    try:
+        cases = service.get_counselor_cases(str(counselor_id)) or []
+        active = [c for c in cases if c.get('status') in ['assigned', 'active']]
+        active.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
+        idx = next((i for i, c in enumerate(active) if c.get('id') == case_dict.get('id')), None)
+        if idx is not None:
+            return f"#case{idx + 1}"
+    except Exception:
+        pass
+    return f"#case{(case_dict.get('id','')[:3] or '').lower()}"
+
+# Counselor-only keyboard
+COUNSELOR_MENU = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("🔀 Switch case"), KeyboardButton("📋 My cases")],
+        [KeyboardButton("📝 Set name"), KeyboardButton("🔒 End chat")],
+        [KeyboardButton("❓ Help")],
     ],
     resize_keyboard=True
 )
@@ -54,6 +118,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'role': 'user'
         })
     
+    # Pick keyboard per role
+    role_kb = MAIN_MENU
+    try:
+        existing = service.get_user(user.id)
+        if existing and existing.get('role') in ['counselor', 'leader']:
+            role_kb = COUNSELOR_MENU
+    except Exception:
+        pass
+
     await update.message.reply_text(
         f"Hello {user.first_name}! 👋\n\n"
         f"Welcome to Counseling Bot!\n\n"
@@ -62,7 +135,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"`/cases` - View your cases\n"
         f"`/help` - Show help",
         parse_mode='Markdown',
-        reply_markup=MAIN_MENU
+        reply_markup=role_kb
     )
 
 
@@ -284,8 +357,10 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for idx, c in enumerate(active_cases, start=1):
             marker = " (current)" if current and current == c.get('id') else ""
             user_info = f"{c.get('user_telegram_id')}"
+            alias = c.get('alias')
+            alias_lbl = f"[{alias}] " if alias else ""
             problem = (c.get('problem') or '')[:40]
-            lines.append(f"{idx}. `{c.get('id','')[:12]}` - {problem}{marker}")
+            lines.append(f"{idx}. `{c.get('id','')[:12]}` - {alias_lbl}{problem}{marker}")
         lines.append("\nReply with `/switch <index>` or `/switch <case_id>`. ")
         await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
         return
@@ -312,9 +387,9 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     counselor_active_case_selection[user.id] = chosen['id']
-    user_label = f"{chosen.get('user_telegram_id')}"
+    case_label = build_case_label(service, user.id, chosen)
     await update.message.reply_text(
-        f"Switched to case `{chosen['id'][:12]}`. Your replies will go to the user.",
+        f"Switched to {case_label}. Your replies will go to the user.",
         parse_mode='Markdown'
     )
 
@@ -330,14 +405,142 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/assign <case_id> <counselor_id>` - Assign case (admin)\n"
         "`/close <case_id>` - Close case\n"
         "`/switch [index|case_id]` - Counselors: choose which user to reply to\n"
+        "`/setname [case_id] <alias>` - Counselors: label a case with a name\n"
+        "`/rename [case_id] <alias>` - Same as /setname (rename alias)\n"
+        "`/clearname [case_id]` - Remove alias from a case\n"
+        "`/end` - Counselors: clear current case selection\n"
         "`/help` - Show this help"
     )
-    await update.message.reply_text(help_text, parse_mode='Markdown', reply_markup=MAIN_MENU)
+    # Show role-aware keyboard
+    service = get_firebase_service()
+    user = update.effective_user
+    kb = MAIN_MENU
+    try:
+        existing = service.get_user(user.id)
+        if existing and existing.get('role') in ['counselor', 'leader']:
+            kb = COUNSELOR_MENU
+    except Exception:
+        pass
+    await update.message.reply_text(help_text, parse_mode='Markdown', reply_markup=kb)
 
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show main menu keyboard again."""
-    await update.message.reply_text("Main menu:", reply_markup=MAIN_MENU)
+    service = get_firebase_service()
+    user = update.effective_user
+    kb = MAIN_MENU
+    try:
+        existing = service.get_user(user.id)
+        if existing and existing.get('role') in ['counselor', 'leader']:
+            kb = COUNSELOR_MENU
+    except Exception:
+        pass
+    await update.message.reply_text("Main menu:", reply_markup=kb)
+
+
+async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Clear counselor's current case selection."""
+    user = update.effective_user
+    counselor_active_case_selection.pop(user.id, None)
+    await update.message.reply_text("Ended chat session. Use /switch to choose a case.", reply_markup=MAIN_MENU)
+
+
+async def setname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Counselors: set an alias/name for a case.
+    Usage:
+      /setname <alias>                 -> applies to currently selected case
+      /setname <case_id> <alias>       -> applies to specified case (exact or prefix)
+    """
+    user = update.effective_user
+    service = get_firebase_service()
+    user_data = service.get_user(user.id)
+    if not user_data or user_data.get('role') not in ['counselor', 'leader']:
+        await update.message.reply_text("Only counselors can use /setname.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /setname [case_id] <alias>")
+        return
+
+    case_id = None
+    alias = None
+    if len(context.args) == 1:
+        alias = context.args[0]
+        case_id = counselor_active_case_selection.get(user.id)
+        if not case_id:
+            await update.message.reply_text("No current case selected. Use /switch or pass a case id: /setname <case_id> <alias>.")
+            return
+    else:
+        possible_id = context.args[0]
+        alias = ' '.join(context.args[1:])
+        # Resolve by exact/prefix among counselor's cases
+        cases = service.get_counselor_cases(str(user.id)) or []
+        target = None
+        for c in cases:
+            cid = c.get('id', '')
+            if cid == possible_id or cid.startswith(possible_id):
+                target = c
+                break
+        if not target:
+            await update.message.reply_text("Case not found in your assignments.")
+            return
+        case_id = target['id']
+
+    try:
+        service.db.collection('cases').document(case_id).update({
+            'alias': alias,
+            'updated_at': datetime.now().isoformat()
+        })
+        await update.message.reply_text(f"Alias set for case {case_id[:8]}: [{alias}]", reply_markup=MAIN_MENU)
+    except Exception as e:
+        await update.message.reply_text(f"Error setting alias: {e}")
+
+
+async def rename_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Alias for /setname: rename the case alias using same rules."""
+    await setname_command(update, context)
+
+
+async def clearname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Remove alias from a case. Usage:
+      /clearname                 -> applies to current selected case
+      /clearname <case_id>       -> applies to specified case (exact or prefix)
+    """
+    user = update.effective_user
+    service = get_firebase_service()
+    user_data = service.get_user(user.id)
+    if not user_data or user_data.get('role') not in ['counselor', 'leader']:
+        await update.message.reply_text("Only counselors can use /clearname.")
+        return
+
+    case_id = None
+    if not context.args:
+        case_id = counselor_active_case_selection.get(user.id)
+        if not case_id:
+            await update.message.reply_text("No current case selected. Use /switch or pass a case id: /clearname <case_id>.")
+            return
+    else:
+        possible_id = context.args[0]
+        cases = service.get_counselor_cases(str(user.id)) or []
+        target = None
+        for c in cases:
+            cid = c.get('id', '')
+            if cid == possible_id or cid.startswith(possible_id):
+                target = c
+                break
+        if not target:
+            await update.message.reply_text("Case not found in your assignments.")
+            return
+        case_id = target['id']
+
+    try:
+        service.db.collection('cases').document(case_id).update({
+            'alias': None,
+            'updated_at': datetime.now().isoformat()
+        })
+        await update.message.reply_text(f"Alias removed for case {case_id[:8]}", reply_markup=MAIN_MENU)
+    except Exception as e:
+        await update.message.reply_text(f"Error removing alias: {e}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -349,6 +552,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     service = get_firebase_service()
     user_data = service.get_user(user.id)
+
+    # Defensive: handle common slash commands here in case CommandHandlers miss them
+    if text.startswith('/switch'):
+        parts = text.split(maxsplit=1)
+        context.args = parts[1:].pop(0).split() if len(parts) > 1 else []
+        await switch_command(update, context)
+        return
+    if text.startswith('/cases'):
+        context.args = []
+        await cases_command(update, context)
+        return
+    if text.startswith('/menu'):
+        await menu_command(update, context)
+        return
+    if text.startswith('/end'):
+        await end_command(update, context)
+        return
+    if text.startswith('/setname'):
+        # Let the defensive router handle it
+        parts = text.split(maxsplit=1)
+        context.args = parts[1:].pop(0).split() if len(parts) > 1 else []
+        await setname_command(update, context)
+        return
+    if text.startswith('/rename'):
+        parts = text.split(maxsplit=1)
+        context.args = parts[1:].pop(0).split() if len(parts) > 1 else []
+        await rename_command(update, context)
+        return
+    if text.startswith('/clearname'):
+        parts = text.split(maxsplit=1)
+        context.args = parts[1:].pop(0).split() if len(parts) > 1 else []
+        await clearname_command(update, context)
+        return
 
     # Button: New problem -> prompt for text
     if text == "🆕 New problem":
@@ -412,12 +648,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await switch_command(update, context)
         return
 
+    # Button: End chat
+    if text == "🔒 End chat":
+        await end_command(update, context)
+        return
+
     # Button: Help
     if text == "❓ Help":
         await help_command(update, context)
         return
 
-    # If the sender is a counselor/leader, forward to the selected/active user's chat
+    # Button: Set name (counselors)
+    if text == "📝 Set name":
+        context.user_data['awaiting_alias'] = True
+        await update.message.reply_text("Send the new alias for the current case (or use /setname <case_id> <alias>).", reply_markup=ReplyKeyboardRemove())
+        return
+
+    # If the sender is a counselor/leader, forward to the selected user's chat (no auto-fallback)
     role = user_data.get('role') if user_data else None
     if role in ['counselor', 'leader']:
         try:
@@ -431,14 +678,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     counselor_active_case_selection.pop(user.id, None)
 
             if target_case is None:
-                counselor_cases = service.get_counselor_cases(str(user.id))
-                active_cases = [c for c in (counselor_cases or []) if c.get('status') in ['assigned', 'active']]
-                if not active_cases:
-                    await update.message.reply_text("No active/assigned case to reply to.")
-                    return
-                # Pick the most recently updated/created case (ISO strings sort correctly)
-                active_cases.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
-                target_case = active_cases[0]
+                await update.message.reply_text(
+                    "You have no current case selected. Use /switch to choose one.",
+                    reply_markup=MAIN_MENU
+                )
+                return
             message_text = update.message.text
 
             # Save message
@@ -453,11 +697,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Forward to the user
             try:
+                # Send clean message to the user (no case tag)
                 await context.bot.send_message(
                     chat_id=int(target_case['user_telegram_id']),
                     text=f"👥 Counselor: {message_text}"
                 )
-                await update.message.reply_text("Message sent to the user.")
+                # Add a small inline-style tag right under counselor's own message
+                try:
+                    await update.message.reply_text(
+                        f"_{build_case_tag(service, user.id, target_case)}_",
+                        parse_mode='Markdown'
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error(f"Error forwarding to user: {e}")
                 await update.message.reply_text("Error sending message to user.")
@@ -467,6 +719,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Error handling your message. Please try again.")
             return
     
+    # If counselor sent a message while waiting for alias, treat text as alias
+    if context.user_data.get('awaiting_alias'):
+        context.user_data.pop('awaiting_alias', None)
+        # Apply alias to current selected case
+        selected_case_id = counselor_active_case_selection.get(user.id)
+        if not selected_case_id:
+            await update.message.reply_text("No current case selected. Use /switch or /setname <case_id> <alias>.", reply_markup=COUNSELOR_MENU if (user_data and user_data.get('role') in ['counselor','leader']) else MAIN_MENU)
+            return
+        service.db.collection('cases').document(selected_case_id).update({
+            'alias': text,
+            'updated_at': datetime.now().isoformat()
+        })
+        await update.message.reply_text(f"Alias set for case {selected_case_id[:8]}: [{text}]", reply_markup=COUNSELOR_MENU)
+        return
+
     # Check if user has an active case
     user_cases = service.get_user_cases(user.id)
     case = user_cases[0] if user_cases and any(c.get('status') in ['pending', 'assigned', 'active'] for c in user_cases) else None
@@ -508,14 +775,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(
             chat_id=int(counselor_id),
-            text=f"📩 Message from user:\n\n{message_text}\n\n---\nReply to this message to respond."
+            text=(
+                f"📩 Message from user {user.first_name or ''} ({user.id}):\n\n{message_text}\n\n_{build_case_tag(service, counselor_id, case)}_"
+            ),
+            parse_mode='Markdown'
         )
-        
-        await update.message.reply_text(
-            "Message sent to your counselor!",
-            parse_mode='Markdown',
-            reply_markup=MAIN_MENU
-        )
+        # Suppress per-message confirmation to the user
     except Exception as e:
         logger.error(f"Error forwarding message: {e}")
         await update.message.reply_text("Error sending message. Please try again.")
@@ -535,6 +800,10 @@ def main():
     logger.info("Adding handlers...")
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu_command))
+    application.add_handler(CommandHandler("end", end_command))
+    application.add_handler(CommandHandler("setname", setname_command))
+    application.add_handler(CommandHandler("rename", rename_command))
+    application.add_handler(CommandHandler("clearname", clearname_command))
     application.add_handler(CommandHandler("problem", problem_command))
     application.add_handler(CommandHandler("assign", assign_command))
     application.add_handler(CommandHandler("cases", cases_command))
