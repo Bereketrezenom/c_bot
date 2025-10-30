@@ -26,6 +26,7 @@ def _register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("assign", commands.assign_command))
     application.add_handler(CommandHandler("cases", commands.cases_command))
     application.add_handler(CommandHandler("switch", commands.switch_command))
+    application.add_handler(CallbackQueryHandler(commands.switch_pick_callback, pattern=r"^sw_pick:"))
     application.add_handler(CommandHandler("register_counselor", commands.register_counselor_command))
     application.add_handler(CommandHandler("register_admin", commands.register_admin_command))
     application.add_handler(CommandHandler("help", commands.help_command))

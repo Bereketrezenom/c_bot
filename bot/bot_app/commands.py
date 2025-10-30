@@ -302,23 +302,27 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cases = service.get_counselor_cases(str(user.id)) or []
     active_cases = [c for c in cases if c.get('status') in ['assigned', 'active']]
-    # Stable order: newest first
-    active_cases.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
+    # Stable order: storage/creation order (oldest first)
+    try:
+        active_cases.sort(key=lambda c: (c.get('created_at') or c.get('updated_at') or ''))
+    except Exception:
+        pass
 
     if not context.args:
         if not active_cases:
             await update.message.reply_text("You have no assigned/active cases.")
             return
+        # Text list + inline buttons for all cases (newest first)
         current = counselor_active_case_selection.get(user.id)
         lines = ["Your assigned cases (newest first):\n"]
+        rows = []
         for idx, c in enumerate(active_cases, start=1):
-            marker = " (current)" if current and current == c.get('id') else ""
-            alias = c.get('alias')
-            alias_lbl = f"[{alias}] " if alias else ""
             problem = (c.get('problem') or '')[:40]
-            lines.append(f"{idx}. `{c.get('id','')[:12]}` - {alias_lbl}{problem}{marker}")
-        lines.append("\nReply with `/switch <index>` or `/switch <case_id>`. ")
-        await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+            marker = " (current)" if current and current == c.get('id') else ""
+            lines.append(f"{idx}. `{c.get('id','')[:12]}` - {problem}{marker}")
+            btn_text = f"#{idx} {c.get('id','')[:8]}"
+            rows.append([InlineKeyboardButton(btn_text, callback_data=f"sw_pick:{c['id']}")])
+        await update.message.reply_text("\n".join(lines), parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(rows[:50]))
         return
 
     # With argument -> select
@@ -348,6 +352,26 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Switched to {case_label}. Your replies will go to the user.",
         parse_mode='Markdown'
     )
+
+
+async def switch_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inline callback: set current case for counselor."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ''
+    if not data.startswith('sw_pick:'):
+        return
+    case_id = data.split(':', 1)[1]
+    service = get_firebase_service()
+    user = query.from_user
+    # Validate case belongs to counselor
+    c = service.get_case(case_id)
+    if not c or str(c.get('assigned_counselor_id')) != str(user.id) or c.get('status') not in ['assigned','active']:
+        await query.edit_message_text("Case not found in your assignments.")
+        return
+    counselor_active_case_selection[user.id] = case_id
+    case_label = build_case_label(service, user.id, c)
+    await query.edit_message_text(f"✅ Switched to {case_label}. Now your messages will reach the user.")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,7 +423,15 @@ async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Clear counselor's current case selection."""
     user = update.effective_user
     counselor_active_case_selection.pop(user.id, None)
-    await update.message.reply_text("Ended chat session. Use /switch to choose a case.", reply_markup=build_main_menu())
+    service = get_firebase_service()
+    kb = build_main_menu()
+    try:
+        u = service.get_user(user.id)
+        if u and u.get('role') in ['counselor','leader']:
+            kb = build_counselor_menu()
+    except Exception:
+        pass
+    await update.message.reply_text("Ended chat session. Use /switch to choose a case.", reply_markup=kb)
 
 
 async def setname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -448,7 +480,7 @@ async def setname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'alias': alias,
             'updated_at': datetime.now().isoformat()
         })
-        await update.message.reply_text(f"Alias set for case {case_id[:8]}: [{alias}]", reply_markup=build_main_menu())
+        await update.message.reply_text(f"Alias set for case {case_id[:8]}: [{alias}]", reply_markup=build_counselor_menu())
     except Exception as e:
         await update.message.reply_text(f"Error setting alias: {e}")
 
@@ -495,7 +527,7 @@ async def clearname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'alias': None,
             'updated_at': datetime.now().isoformat()
         })
-        await update.message.reply_text(f"Alias removed for case {case_id[:8]}", reply_markup=build_main_menu())
+        await update.message.reply_text(f"Alias removed for case {case_id[:8]}", reply_markup=build_counselor_menu())
     except Exception as e:
         await update.message.reply_text(f"Error removing alias: {e}")
 

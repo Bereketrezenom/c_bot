@@ -57,28 +57,31 @@ def get_firebase_service():
 
 
 def build_case_label(service, counselor_id, case_dict):
-    """Return a stable, human-friendly label like 'Case #1 [Alias]' for a case.
-    Index is computed from counselor's assigned/active cases, newest first.
-    Falls back to short id if not found.
+    """Return a stable, human-friendly label for a case.
+
+    We avoid positional numbers (which can change as lists reorder) and use a
+    short, immutable id instead, optionally followed by an alias.
+    Example: 'Case 1a2b3c4d [John]'.
+    """
+    short_id = (case_dict.get('id', '') or '')[:8]
+    base = f"Case {short_id}"
+    return base
+
+
+def build_case_tag(service, counselor_id, case_dict):
+    """Return a compact hashtag like '#case1' for subtle tagging.
+
+    Uses the case's index among the counselor's assigned/active cases
+    (newest first). Falls back to a short id prefix if not found.
     """
     try:
         cases = service.get_counselor_cases(str(counselor_id)) or []
         active = [c for c in cases if c.get('status') in ['assigned', 'active']]
-        active.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
-        idx = next((i for i, c in enumerate(active) if c.get('id') == case_dict.get('id')), None)
-        base = f"Case #{idx + 1}" if idx is not None else f"Case {case_dict.get('id','')[:8]}"
-        alias = case_dict.get('alias')
-        return f"{base} [{alias}]" if alias else base
-    except Exception:
-        return f"Case {case_dict.get('id','')[:8]}"
-
-
-def build_case_tag(service, counselor_id, case_dict):
-    """Return a compact hashtag like '#case1' for subtle tagging."""
-    try:
-        cases = service.get_counselor_cases(str(counselor_id)) or []
-        active = [c for c in cases if c.get('status') in ['assigned', 'active']]
-        active.sort(key=lambda c: (c.get('updated_at') or c.get('created_at') or ''), reverse=True)
+        # Storage/creation order (oldest first)
+        try:
+            active.sort(key=lambda c: (c.get('created_at') or c.get('updated_at') or ''))
+        except Exception:
+            pass
         idx = next((i for i, c in enumerate(active) if c.get('id') == case_dict.get('id')), None)
         if idx is not None:
             return f"#case{idx + 1}"

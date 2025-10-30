@@ -155,9 +155,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     counselor_active_case_selection.pop(user.id, None)
 
             if target_case is None:
+                # Show counselor menu (avoid 'New problem' for counselors)
                 await update.message.reply_text(
                     "You have no current case selected. Use /switch to choose one.",
-                    reply_markup=build_main_menu()
+                    reply_markup=build_counselor_menu()
                 )
                 return
             message_text = update.message.text
