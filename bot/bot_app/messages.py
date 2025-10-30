@@ -8,6 +8,7 @@ from bot.ui.keyboards import build_main_menu, build_counselor_menu
 from .utils import get_firebase_service, build_case_tag
 from .state import counselor_active_case_selection
 from . import commands as cmd
+from . import admin_features as adm
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             # Reuse logic from /problem without needing args
             user_cases = service.get_user_cases(user.id)
-            existing_case = user_cases[0] if user_cases and any(c.get('status') in ['pending', 'assigned', 'active'] for c in user_cases) else None
+            active_cases = [c for c in user_cases if c.get('status') in ['pending', 'assigned', 'active']]
+            existing_case = active_cases[0] if active_cases else None
             if existing_case:
                 await update.message.reply_text(
                     "You already have an active case!\n\nTo view your case, tap '📋 My cases'.",
@@ -123,6 +125,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🔀 Switch case":
         context.args = []
         await cmd.switch_command(update, context)
+        return
+
+    # Admin-only buttons
+    if text == "📊 All cases":
+        await cmd.admin_list_all_cases_command(update, context)
+        return
+    if text == "🕓 Pending":
+        await adm.pending_cases_command(update, context)
+        return
+
+    # Button: Done
+    if text == "✅ Done":
+        await cmd.done_case_command(update, context)
         return
 
     # Button: End chat

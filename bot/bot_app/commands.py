@@ -5,7 +5,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from bot.ui.keyboards import build_main_menu, build_counselor_menu
+from bot.ui.keyboards import build_main_menu, build_counselor_menu, build_admin_menu
 from .utils import get_firebase_service, build_case_label
 from .state import counselor_active_case_selection
 
@@ -31,8 +31,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role_kb = build_main_menu()
     try:
         existing = service.get_user(user.id)
-        if existing and existing.get('role') in ['counselor', 'leader']:
-            role_kb = build_counselor_menu()
+        if existing:
+            if existing.get('role') in ['admin', 'leader']:
+                role_kb = build_admin_menu()
+            elif existing.get('role') == 'counselor':
+                role_kb = build_counselor_menu()
     except Exception:
         pass
 
@@ -60,7 +63,8 @@ async def problem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check if user already has a case
     user_cases = service.get_user_cases(user.id)
-    existing_case = user_cases[0] if user_cases and any(c.get('status') in ['pending', 'assigned', 'active'] for c in user_cases) else None
+    active_cases = [c for c in user_cases if c.get('status') in ['pending', 'assigned', 'active']]
+    existing_case = active_cases[0] if active_cases else None
 
     if existing_case:
         # User already has a case - just send them a message
@@ -177,21 +181,71 @@ async def cases_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         message = f"📋 Your Cases ({len(cases)})\n\n"
         for case in cases:
-            message += f"`{case['id'][:12]}` - {case['problem'][:50]}...\n"
+            done_marker = " ✅" if case.get('done') else ""
+            message += f"`{case['id'][:12]}` - {case['problem'][:50]}...{done_marker}\n"
 
         await update.message.reply_text(message, parse_mode='Markdown')
 
     else:
         cases = service.get_user_cases(user.id)
         if not cases:
-            await update.message.reply_text("No cases yet. Use `/problem <text>` to create one.", parse_mode='Markdown')
+            await update.message.reply_text(
+                "No cases yet. Use `/problem <text>` to create one.",
+                parse_mode='Markdown',
+                reply_markup=build_main_menu(),  # remove keyboard for normal users
+            )
             return
 
         message = f"📋 Your Cases ({len(cases)})\n\n"
         for case in cases[:5]:
-            message += f"`{case['id'][:12]}` - {case['status']}\n"
+            status = case['status']
+            if case.get('done'):
+                status += " ✅"
+            message += f"`{case['id'][:12]}` - {status}\n"
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=build_main_menu())
+
+
+async def admin_list_all_cases_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admins/leaders: list all cases with assigned counselor and user.
+
+    Shows a compact list: ID, status, user first name, counselor first name (or Unassigned).
+    """
+    user = update.effective_user
+    service = get_firebase_service()
+    me = service.get_user(user.id)
+    if not me or me.get('role') not in ['admin', 'leader']:
+        await update.message.reply_text("❌ Only admins can view all cases.")
+        return
+
+    all_cases = []
+    for doc in service.db.collection('cases').stream():
+        c = doc.to_dict()
+        c['id'] = doc.id
+        all_cases.append(c)
+
+    # Sort by created_at (oldest first for stable numbering)
+    try:
+        all_cases.sort(key=lambda c: (c.get('created_at') or c.get('updated_at') or ''))
+    except Exception:
+        pass
+
+    lines = [f"📋 All Cases ({len(all_cases)})\n"]
+    for c in all_cases[:50]:
+        user_info = service.get_user(c.get('user_telegram_id')) or {}
+        user_name = user_info.get('first_name') or str(c.get('user_telegram_id'))
+        counselor_name = "Unassigned"
+        if c.get('assigned_counselor_id'):
+            counselor = service.get_user(c.get('assigned_counselor_id')) or {}
+            counselor_name = counselor.get('first_name') or str(c.get('assigned_counselor_id'))
+        status = c.get('status','?')
+        if c.get('done'):
+            status += " ✅"
+        lines.append(
+            f"`{c['id'][:10]}` - {status} | user: {user_name} | counselor: {counselor_name}"
+        )
+
+    await update.message.reply_text("\n".join(lines), parse_mode='Markdown', reply_markup=build_admin_menu())
 
 
 async def register_counselor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -312,14 +366,20 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not active_cases:
             await update.message.reply_text("You have no assigned/active cases.")
             return
-        # Text list + inline buttons for all cases (newest first)
+        # Ensure counselor keyboard is active (no user buttons)
+        try:
+            await update.message.reply_text("Switch case:", reply_markup=build_counselor_menu())
+        except Exception:
+            pass
+        # Text list + inline buttons for all cases
         current = counselor_active_case_selection.get(user.id)
         lines = ["Your assigned cases (newest first):\n"]
         rows = []
         for idx, c in enumerate(active_cases, start=1):
             problem = (c.get('problem') or '')[:40]
             marker = " (current)" if current and current == c.get('id') else ""
-            lines.append(f"{idx}. `{c.get('id','')[:12]}` - {problem}{marker}")
+            done_marker = " ✅" if c.get('done') else ""
+            lines.append(f"{idx}. `{c.get('id','')[:12]}` - {problem}{done_marker}{marker}")
             btn_text = f"#{idx} {c.get('id','')[:8]}"
             rows.append([InlineKeyboardButton(btn_text, callback_data=f"sw_pick:{c['id']}")])
         await update.message.reply_text("\n".join(lines), parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(rows[:50]))
@@ -350,7 +410,8 @@ async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     case_label = build_case_label(service, user.id, chosen)
     await update.message.reply_text(
         f"Switched to {case_label}. Your replies will go to the user.",
-        parse_mode='Markdown'
+        parse_mode='Markdown',
+        reply_markup=build_counselor_menu()
     )
 
 
@@ -372,36 +433,56 @@ async def switch_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     counselor_active_case_selection[user.id] = case_id
     case_label = build_case_label(service, user.id, c)
     await query.edit_message_text(f"✅ Switched to {case_label}. Now your messages will reach the user.")
+    # Also send a small message to refresh the reply keyboard
+    try:
+        await query.message.reply_text("Menu updated.", reply_markup=build_counselor_menu())
+    except Exception:
+        pass
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
-    help_text = (
-        "**Counseling Bot Help**\n\n"
-        "**Commands:**\n"
-        "`/start` - Start the bot\n"
-        "`/problem <text>` - Submit a counseling request\n"
-        "`/cases` - View your cases\n"
-        "`/register_counselor <passcode>` - Register as counselor\n"
-        "`/assign <case_id> <counselor_id>` - Assign case (admin)\n"
-        "`/close <case_id>` - Close case\n"
-        "`/switch [index|case_id]` - Counselors: choose which user to reply to\n"
-        "`/setname [case_id] <alias>` - Counselors: label a case with a name\n"
-        "`/rename [case_id] <alias>` - Same as /setname (rename alias)\n"
-        "`/clearname [case_id]` - Remove alias from a case\n"
-        "`/end` - Counselors: clear current case selection\n"
-        "`/help` - Show this help"
-    )
-    # Show role-aware keyboard
     service = get_firebase_service()
     user = update.effective_user
-    kb = build_main_menu()
+    role = 'user'
     try:
         existing = service.get_user(user.id)
-        if existing and existing.get('role') in ['counselor', 'leader']:
-            kb = build_counselor_menu()
+        if existing:
+            role = existing.get('role', 'user')
     except Exception:
         pass
+
+    if role in ['admin', 'leader']:
+        help_text = (
+            "**Admin Help**\n\n"
+            "`/cases` - View all cases\n"
+            "`/assign <case_id> <counselor_id>` - Assign case\n"
+            "`/cases_all` - List all cases with users and counselors\n"
+            "`/pending` - List pending cases with Assign buttons\n"
+            "`/register_admin <passcode>` - Become admin\n"
+            "`/help` - Show this help"
+        )
+        kb = build_admin_menu()
+    elif role == 'counselor':
+        help_text = (
+            "**Counselor Help**\n\n"
+            "`/cases` - View your assigned cases\n"
+            "`/switch [index|case_id]` - Choose which user to reply to\n"
+            "`/setname [case_id] <alias>` / `/clearname [case_id]` - Manage case label\n"
+            "`/end` - Close the current case\n"
+            "`/help` - Show this help"
+        )
+        kb = build_counselor_menu()
+    else:
+        help_text = (
+            "**Help**\n\n"
+            "`/start` - Start the bot\n"
+            "`/problem <text>` - Submit a counseling request\n"
+            "`/cases` - View your cases\n"
+            "`/help` - Show this help"
+        )
+        kb = build_main_menu()
+
     await update.message.reply_text(help_text, parse_mode='Markdown', reply_markup=kb)
 
 
@@ -412,26 +493,81 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = build_main_menu()
     try:
         existing = service.get_user(user.id)
-        if existing and existing.get('role') in ['counselor', 'leader']:
-            kb = build_counselor_menu()
+        if existing:
+            if existing.get('role') in ['admin', 'leader']:
+                kb = build_admin_menu()
+            elif existing.get('role') == 'counselor':
+                kb = build_counselor_menu()
     except Exception:
         pass
     await update.message.reply_text("Main menu:", reply_markup=kb)
 
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Clear counselor's current case selection."""
+    """Counselor ends a chat: close the current case and clear selection.
+
+    - Only counselors/leaders can use it
+    - Sets case.status = 'closed' and updated_at
+    - Notifies the user that the case has been closed
+    """
     user = update.effective_user
-    counselor_active_case_selection.pop(user.id, None)
     service = get_firebase_service()
-    kb = build_main_menu()
+    u = service.get_user(user.id)
+    if not u or u.get('role') not in ['counselor', 'leader']:
+        await update.message.reply_text("This action is only for counselors.")
+        return
+
+    selected_case_id = counselor_active_case_selection.get(user.id)
+    if not selected_case_id:
+        await update.message.reply_text("No current case selected. Use /switch to choose one.", reply_markup=build_counselor_menu())
+        return
+
     try:
-        u = service.get_user(user.id)
-        if u and u.get('role') in ['counselor','leader']:
-            kb = build_counselor_menu()
+        # Close case
+        service.db.collection('cases').document(selected_case_id).update({
+            'status': 'closed',
+            'updated_at': datetime.now().isoformat()
+        })
+        case = service.get_case(selected_case_id)
+        # Notify user
+        try:
+            await context.bot.send_message(
+                chat_id=int(case.get('user_telegram_id')),
+                text=(
+                    "Your counseling case has been closed. If you need more help, you can create a new case any time."
+                )
+            )
+        except Exception:
+            pass
     except Exception:
         pass
-    await update.message.reply_text("Ended chat session. Use /switch to choose a case.", reply_markup=kb)
+
+    counselor_active_case_selection.pop(user.id, None)
+    await update.message.reply_text("✅ Case closed. Use /switch to choose another case.", reply_markup=build_counselor_menu())
+
+
+async def done_case_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Counselor marks the current case as done (keeps conversation open)."""
+    user = update.effective_user
+    service = get_firebase_service()
+    u = service.get_user(user.id)
+    if not u or u.get('role') not in ['counselor', 'leader']:
+        await update.message.reply_text("This action is only for counselors.")
+        return
+
+    selected_case_id = counselor_active_case_selection.get(user.id)
+    if not selected_case_id:
+        await update.message.reply_text("No current case selected. Use /switch to choose one.", reply_markup=build_counselor_menu())
+        return
+
+    try:
+        service.db.collection('cases').document(selected_case_id).update({
+            'done': True,
+            'updated_at': datetime.now().isoformat()
+        })
+        await update.message.reply_text("✅ Marked as done. Conversation remains open.", reply_markup=build_counselor_menu())
+    except Exception as e:
+        await update.message.reply_text(f"Error marking done: {e}")
 
 
 async def setname_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
