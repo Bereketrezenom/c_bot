@@ -69,6 +69,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         problem_text = text
         context.user_data.pop('awaiting_problem_text', None)
         try:
+            # Check if user is blocked
+            if user_data and user_data.get('blocked'):
+                await update.message.reply_text(
+                    "You have been blocked from creating counseling cases. Please contact an administrator if you need assistance.",
+                    reply_markup=build_main_menu()
+                )
+                return
+            
             # Reuse logic from /problem without needing args
             user_cases = service.get_user_cases(user.id)
             active_cases = [c for c in user_cases if c.get('status') in ['pending', 'assigned', 'active']]
@@ -140,8 +148,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cmd.done_case_command(update, context)
         return
 
-    # Button: End chat
-    if text == "🔒 End chat":
+    # Button: Block user
+    if text == "🚫 Block user":
         await cmd.end_command(update, context)
         return
 
@@ -234,7 +242,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not case:
         # No case - suggest button
         await update.message.reply_text(
-            "Tap '🆕 New problem' below to submit your issue, or use `/problem <your issue>`.",
+            "Tap '🆕 New problem' below to submit your issue, or use `/discuss <your message>`.",
             parse_mode='Markdown',
             reply_markup=build_main_menu()
         )

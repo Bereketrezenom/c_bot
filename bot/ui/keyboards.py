@@ -13,7 +13,7 @@ def build_counselor_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton("🔀 Switch case"), KeyboardButton("📋 My cases")],
             [KeyboardButton("📝 Set name"), KeyboardButton("✅ Done")],
-            [KeyboardButton("🔒 End chat"), KeyboardButton("❓ Help")],
+            [KeyboardButton("🚫 Block user"), KeyboardButton("❓ Help")],
         ],
         resize_keyboard=True,
     )
@@ -24,7 +24,7 @@ def build_admin_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton("🔀 Switch case"), KeyboardButton("📋 My cases")],
             [KeyboardButton("📝 Set name"), KeyboardButton("✅ Done")],
-            [KeyboardButton("🔒 End chat"), KeyboardButton("❓ Help")],
+            [KeyboardButton("🚫 Block user"), KeyboardButton("❓ Help")],
             [KeyboardButton("📊 All cases"), KeyboardButton("🕓 Pending")],
         ],
         resize_keyboard=True,

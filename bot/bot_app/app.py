@@ -24,6 +24,7 @@ def _register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("rename", commands.rename_command))
     application.add_handler(CommandHandler("clearname", commands.clearname_command))
     application.add_handler(CommandHandler("problem", commands.problem_command))
+    application.add_handler(CommandHandler("discuss", commands.problem_command))
     application.add_handler(CommandHandler("assign", commands.assign_command))
     application.add_handler(CommandHandler("cases_all", commands.admin_list_all_cases_command))
     application.add_handler(CommandHandler("cases", commands.cases_command))

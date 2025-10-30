@@ -41,11 +41,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"Hello {user.first_name}! 👋\n\n"
-        f"Welcome to Counseling Bot!\n\n"
-        f"Use the buttons below or commands:\n"
-        f"`/problem <text>` - Submit a counseling request\n"
-        f"`/cases` - View your cases\n"
-        f"`/help` - Show help",
+        f"Welcome to our Counseling Bot! / ወደ የእኛ ምክክር ቦት እንኳን በደህና መጡ።\n\n"
+        f"🔹 This is a counseling and support chat service for any kind of issue or problem.\n"
+        f"🔹 ይህ ለማንኛውም ዓይነት ጉዳይ ወይም ችግር የምክክር እና ድጋፍ የቻት አገልግሎት ነው።\n\n"
+        f"🔒 Your conversations are completely **anonymous** and **private**. Don't worry about keeping your secrets safe - we respect your privacy!\n"
+        f"🔒 የእናንተ ምክክር **የተደበቀ** እና **ግላዊ** ነው። ምስጢሮችህን አያስጨንቅም - ግላዊነትህን እንከበራለን።\n\n"
+        f"📝 Just send me a message or use: `/discuss <your message>` to get started.\n"
+        f"📝 መልእክት ላክልኝ ወይም ለመጀመር: `/discuss <አንተ መልእክት>`\n\n"
+        f"💬 You can also view your conversations with: `/cases`\n"
+        f"💬 የእናንተን ምክክር ለማየት: `/cases`",
         parse_mode='Markdown',
         reply_markup=role_kb
     )
@@ -54,12 +58,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def problem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /problem command - creates case only if user doesn't have one."""
     if not context.args:
-        await update.message.reply_text("Please describe your problem:\n`/problem I feel anxious`", parse_mode='Markdown')
+        await update.message.reply_text("Hello! Feel free to share what's on your mind:\n`/discuss <your message>`", parse_mode='Markdown')
         return
 
     user = update.effective_user
     service = get_firebase_service()
     problem_text = ' '.join(context.args)
+
+    # Check if user is blocked
+    user_data = service.get_user(user.id)
+    if user_data and user_data.get('blocked'):
+        await update.message.reply_text(
+            "You have been blocked from creating counseling cases. Please contact an administrator if you need assistance."
+        )
+        return
 
     # Check if user already has a case
     user_cases = service.get_user_cases(user.id)
@@ -190,7 +202,7 @@ async def cases_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cases = service.get_user_cases(user.id)
         if not cases:
             await update.message.reply_text(
-                "No cases yet. Use `/problem <text>` to create one.",
+                "No cases yet. Use `/discuss <message>` to create one.",
                 parse_mode='Markdown',
                 reply_markup=build_main_menu(),  # remove keyboard for normal users
             )
@@ -477,8 +489,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = (
             "**Help**\n\n"
             "`/start` - Start the bot\n"
-            "`/problem <text>` - Submit a counseling request\n"
-            "`/cases` - View your cases\n"
+            "`/discuss <text>` - Start a conversation\n"
+            "`/cases` - View your conversations\n"
             "`/help` - Show this help"
         )
         kb = build_main_menu()
@@ -504,11 +516,11 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Counselor ends a chat: close the current case and clear selection.
+    """Counselor blocks a user: close the current case and block them from creating new cases.
 
     - Only counselors/leaders can use it
-    - Sets case.status = 'closed' and updated_at
-    - Notifies the user that the case has been closed
+    - Sets case.status = 'closed' and user.blocked = True
+    - Notifies the user that they have been blocked
     """
     user = update.effective_user
     service = get_firebase_service()
@@ -529,12 +541,21 @@ async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'updated_at': datetime.now().isoformat()
         })
         case = service.get_case(selected_case_id)
+        
+        # Block the user from creating new cases
+        user_telegram_id = case.get('user_telegram_id')
+        if user_telegram_id:
+            service.db.collection('users').document(str(user_telegram_id)).update({
+                'blocked': True,
+                'updated_at': datetime.now().isoformat()
+            })
+        
         # Notify user
         try:
             await context.bot.send_message(
-                chat_id=int(case.get('user_telegram_id')),
+                chat_id=int(user_telegram_id),
                 text=(
-                    "Your counseling case has been closed. If you need more help, you can create a new case any time."
+                    "You have been blocked from creating new counseling cases. Please contact an administrator if you need assistance."
                 )
             )
         except Exception:
@@ -543,7 +564,7 @@ async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     counselor_active_case_selection.pop(user.id, None)
-    await update.message.reply_text("✅ Case closed. Use /switch to choose another case.", reply_markup=build_counselor_menu())
+    await update.message.reply_text("✅ User blocked. Use /switch to choose another case.", reply_markup=build_counselor_menu())
 
 
 async def done_case_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
