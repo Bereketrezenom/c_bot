@@ -1,0 +1,77 @@
+Webhook setup checklist (fill in and keep for reference)
+
+FILL THESE VALUES
+1) TELEGRAM_BOT_TOKEN = _________________________________
+2) APP_PUBLIC_URL (from your host) = _________________________________
+   Examples:
+   - Render: https://your-app.onrender.com
+   - Choreo: https://your-app.choreoapps.dev
+
+3) WEBHOOK_URL = {APP_PUBLIC_URL}/{TELEGRAM_BOT_TOKEN}
+   Computed: ____________________________________________
+
+4) FIREBASE_CREDENTIALS_JSON = paste full JSON here (or store as a Secret File if your host supports it)
+
+
+HOST CONFIG (Choreo)
+- Endpoint Port: 10000
+- Base Path: /
+- API Type: REST
+- Build command: pip install -r requirements.txt
+- Start command: python -m bot.run_bot
+
+Environment variables (Development → Runtime → Environment)
+- TELEGRAM_BOT_TOKEN = <from step 1>
+- WEBHOOK_URL = <from step 3>
+- FIREBASE_CREDENTIALS_JSON = <full JSON content>
+- DJANGO_SETTINGS_MODULE = counseling_bot.settings
+
+
+HOST CONFIG (Render) – optional if you use Render instead of Choreo
+- Build command: pip install -r requirements.txt
+- Start command: python -m bot.run_bot
+- Environment:
+  TELEGRAM_BOT_TOKEN, WEBHOOK_URL, FIREBASE_CREDENTIALS_JSON, DJANGO_SETTINGS_MODULE=counseling_bot.settings
+
+
+DEPLOY + VERIFY
+1) Deploy the service.
+2) In logs, expect lines:
+   - Starting webhook server on 0.0.0.0:10000
+   - Webhook URL set to https://.../<token>
+   - [Firebase] Firestore client created successfully
+
+3) Verify with Telegram in your browser:
+   - GET webhook info:
+     https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo
+   - If mismatch or empty, delete then redeploy:
+     https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook
+
+4) Test in Telegram:
+   - Send /start to your bot.
+   - For normal text messages, some flows require an active case; use /start or /help first.
+
+
+SECURITY NOTE
+- If your token is ever exposed publicly, rotate it in BotFather (Revoke current token) and update TELEGRAM_BOT_TOKEN and WEBHOOK_URL.
+
+
+PRE-FILLED FOR YOUR CURRENT BOT (replace only APP_PUBLIC_URL)
+- TELEGRAM_BOT_TOKEN = 8370908228:AAFb-qhCImEzNYEItDXSwb9oC0r-jh2vLVI
+
+- Paste your APP_PUBLIC_URL below (from your host’s public URL):
+  APP_PUBLIC_URL = https://9cb936bb-12a5-4d33-902a-e0c7343389d5-dev.e1-us-east-azure.choreoapis.dev/default/counsbot/v1.0
+
+- Compute and set:
+  WEBHOOK_URL = https://9cb936bb-12a5-4d33-902a-e0c7343389d5-dev.e1-us-east-azure.choreoapis.dev/default/counsbot/v1.0/8370908228:AAFb-qhCImEzNYEItDXSwb9oC0r-jh2vLVI
+
+- Telegram verification links for your token:
+  GET webhook info:
+  https://api.telegram.org/bot8370908228:AAFb-qhCImEzNYEItDXSwb9oC0r-jh2vLVI/getWebhookInfo
+
+  DELETE webhook (if you need to reset):
+  https://api.telegram.org/bot8370908228:AAFb-qhCImEzNYEItDXSwb9oC0r-jh2vLVI/deleteWebhook
+
+Note: For security, consider rotating this token in BotFather once deployment is confirmed, then update TELEGRAM_BOT_TOKEN and WEBHOOK_URL accordingly.
+
+
