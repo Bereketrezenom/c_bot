@@ -19,13 +19,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     service = get_firebase_service()
 
     # Create user if needed
-    if not service.get_user(user.id):
-        service.create_user({
-            'telegram_id': user.id,
-            'username': user.username,
-            'first_name': user.first_name,
-            'role': 'user'
-        })
+    try:
+        if not service.get_user(user.id):
+            service.create_user({
+                'telegram_id': user.id,
+                'username': user.username,
+                'first_name': user.first_name,
+                'role': 'user'
+            })
+            logger.info(f"Created new user: {user.id}")
+    except Exception as e:
+        logger.error(f"Error creating/getting user in start: {e}")
 
     # Pick keyboard per role
     role_kb = build_main_menu()
@@ -36,23 +40,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 role_kb = build_admin_menu()
             elif existing.get('role') == 'counselor':
                 role_kb = build_counselor_menu()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Error getting user role in start: {e}")
 
-    await update.message.reply_text(
-        f"Hello {user.first_name}! 👋\n\n"
-        f"Welcome to our Counseling Bot! / ወደ የእኛ ምክክር ቦት እንኳን በደህና መጡ።\n\n"
-        f"🔹 This is a counseling and support chat service for any kind of issue or problem.\n"
-        f"🔹 ይህ ለማንኛውም ዓይነት ጉዳይ ወይም ችግር የምክክር እና ድጋፍ የቻት አገልግሎት ነው።\n\n"
-        f"🔒 Your conversations are completely **anonymous** and **private**. Don't worry about keeping your secrets safe - we respect your privacy!\n"
-        f"🔒 የእናንተ ምክክር **የተደበቀ** እና **ግላዊ** ነው። ምስጢሮችህን አያስጨንቅም - ግላዊነትህን እንከበራለን።\n\n"
-        f"📝 Just send me a message or use: `/discuss <your message>` to get started.\n"
-        f"📝 መልእክት ላክልኝ ወይም ለመጀመር: `/discuss <አንተ መልእክት>`\n\n"
-        f"💬 You can also view your conversations with: `/cases`\n"
-        f"💬 የእናንተን ምክክር ለማየት: `/cases`",
-        parse_mode='Markdown',
-        reply_markup=role_kb
-    )
+    try:
+        welcome_message = (
+            f"Hello {user.first_name}! 👋\n\n"
+            f"Welcome to our Counseling Bot! / ወደ የእኛ ምክክር ቦት እንኳን በደህና መጡ።\n\n"
+            f"🔹 This is a counseling and support chat service for any kind of issue or problem.\n"
+            f"🔹 ይህ ለማንኛውም ዓይነት ጉዳይ ወይም ችግር የምክክር እና ድጋፍ የቻት አገልግሎት ነው።\n\n"
+            f"🔒 Your conversations are completely **anonymous** and **private**. Don't worry about keeping your secrets safe - we respect your privacy!\n"
+            f"🔒 የእናንተ ምክክር **የተደበቀ** እና **ግላዊ** ነው። ምስጢሮችህን አያስጨንቅም - ግላዊነትህን እንከበራለን።\n\n"
+            f"📝 Just send me a message or use: `/discuss <your message>` to get started.\n"
+            f"📝 መልእክት ላክልኝ ወይም ለመጀመር: `/discuss <አንተ መልእክት>`\n\n"
+            f"💬 You can also view your conversations with: `/cases`\n"
+            f"💬 የእናንተን ምክክር ለማየት: `/cases`"
+        )
+        await update.message.reply_text(
+            welcome_message,
+            parse_mode='Markdown',
+            reply_markup=role_kb
+        )
+    except Exception as e:
+        logger.error(f"Error sending start message: {e}")
+        await update.message.reply_text(
+            "Welcome! Click the button below to start a conversation.",
+            reply_markup=role_kb
+        )
 
 
 async def problem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
