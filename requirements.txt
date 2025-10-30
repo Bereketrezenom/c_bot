@@ -1,6 +1,6 @@
-Dockerfile
 Django==4.2.7
 python-telegram-bot[webhooks]==20.7
+tornado>=6.2
 firebase-admin==6.2.0
 python-dotenv==1.0.0
 django-cors-headers==4.3.1
