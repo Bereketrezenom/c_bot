@@ -57,15 +57,22 @@ def run() -> None:
         port = int(os.environ.get("PORT", 10000))
         logger.info(f"Starting webhook server on 0.0.0.0:{port}")
         logger.info(f"Webhook URL set to {webhook_url}")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=token,
-            webhook_url=webhook_url,
-        )
-    else:
-        logger.info("Starting in polling mode (no WEBHOOK_URL/WEBHOOK_BASE_URL detected)")
-        application.run_polling()
+        try:
+            application.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=token,
+                webhook_url=webhook_url,
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "Webhook start failed (%s). Falling back to polling...", type(exc).__name__
+            )
+            logger.debug("Webhook error", exc_info=exc)
+
+    logger.info("Starting in polling mode")
+    application.run_polling()
 
 
 def _ensure_firebase_creds_file() -> None:
