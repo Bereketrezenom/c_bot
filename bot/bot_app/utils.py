@@ -22,6 +22,24 @@ def apply_ptb_py313_patch() -> None:
             if changed:
                 Updater.__slots__ = tuple(slots)
                 logger.warning("Applied PTB Updater __slots__ patch for Python 3.13 compatibility")
+
+        # Also patch Application slots in some PTB versions on Python 3.13
+        try:
+            from telegram.ext import _application as _ptb_application  # type: ignore
+            ApplicationCls = getattr(_ptb_application, 'Application', None)
+            if ApplicationCls is not None and hasattr(ApplicationCls, '__slots__'):
+                app_slots = list(ApplicationCls.__slots__)
+                app_needed = ['_Application__stop_running_marker']
+                app_changed = False
+                for name in app_needed:
+                    if name not in app_slots:
+                        app_slots.append(name)
+                        app_changed = True
+                if app_changed:
+                    ApplicationCls.__slots__ = tuple(app_slots)
+                    logger.warning("Applied PTB Application __slots__ patch for Python 3.13 compatibility")
+        except Exception:
+            pass
     except Exception as e:
         logger.warning(f"Skipping PTB compatibility patch: {e}")
 

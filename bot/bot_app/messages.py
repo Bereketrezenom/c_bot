@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from telegram import Update, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from bot.ui.keyboards import build_main_menu, build_counselor_menu
@@ -87,9 +87,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         admins = service.get_all_users_by_role('admin') or []
                     for admin in admins:
                         try:
+                            kb = InlineKeyboardMarkup(
+                                [[InlineKeyboardButton("Assign", callback_data=f"adm_assign:{case_id}")]]
+                            )
                             await context.bot.send_message(
                                 chat_id=admin['telegram_id'],
-                                text=f"New Case: {case_id[:8]}\n\n{problem_text}\n\nUse `/assign {case_id} <counselor_id>`"
+                                text=(
+                                    f"🆕 New Case `{case_id[:8]}`\n\n{problem_text}\n\n"
+                                    f"Tap Assign to choose a counselor."
+                                ),
+                                parse_mode='Markdown',
+                                reply_markup=kb,
                             )
                         except Exception:
                             pass

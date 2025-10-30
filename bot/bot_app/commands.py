@@ -1,7 +1,8 @@
 import logging
+import os
 from datetime import datetime
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from bot.ui.keyboards import build_main_menu, build_counselor_menu
@@ -84,11 +85,19 @@ async def problem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             for admin in admins:
                 try:
+                    kb = InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("Assign", callback_data=f"adm_assign:{case_id}")]]
+                    )
                     await context.bot.send_message(
                         chat_id=admin['telegram_id'],
-                        text=f"New Case: {case_id[:8]}\n\n{problem_text}\n\nUse `/assign {case_id} <counselor_id>`"
+                        text=(
+                            f"🆕 New Case `{case_id[:8]}`\n\n{problem_text}\n\n"
+                            f"Tap Assign to choose a counselor."
+                        ),
+                        parse_mode='Markdown',
+                        reply_markup=kb,
                     )
-                except:
+                except Exception:
                     pass
         except Exception as e:
             logger.error(f"Error notifying admins: {e}")
@@ -235,6 +244,46 @@ async def register_counselor_command(update: Update, context: ContextTypes.DEFAU
     except Exception as e:
         logger.error(f"Error registering counselor: {e}")
         await update.message.reply_text("Error during registration. Please try again.")
+
+
+async def register_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Register the current user as an admin using a passcode.
+    Usage: /register_admin <passcode>
+    The passcode can be set via env var ADMIN_PASSCODE (default: amucfadmin).
+    """
+    if not context.args:
+        await update.message.reply_text(
+            "Please provide the passcode:\n`/register_admin <passcode>`",
+            parse_mode='Markdown'
+        )
+        return
+
+    passcode = context.args[0]
+    expected = os.environ.get('ADMIN_PASSCODE', 'amucfadmin')
+    if passcode != expected:
+        await update.message.reply_text("Invalid passcode. Access denied.")
+        return
+
+    service = get_firebase_service()
+    user = update.effective_user
+    try:
+        user_doc = service.get_user(user.id)
+        if user_doc:
+            service.db.collection('users').document(str(user.id)).update({
+                'role': 'admin',
+                'updated_at': datetime.now().isoformat()
+            })
+        else:
+            service.create_user({
+                'telegram_id': user.id,
+                'username': user.username,
+                'first_name': user.first_name,
+                'role': 'admin'
+            })
+        await update.message.reply_text("✅ You are now registered as ADMIN. Use /pending or /assign.")
+    except Exception as e:
+        logger.error(f"Error registering admin: {e}")
+        await update.message.reply_text("Error during admin registration. Please try again.")
 
 
 async def switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -3,11 +3,12 @@ import os
 from pathlib import Path
 
 from django.conf import settings
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 from . import commands
 from . import messages
 from .utils import apply_ptb_py313_patch
+from . import admin_features
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,12 @@ def _register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("cases", commands.cases_command))
     application.add_handler(CommandHandler("switch", commands.switch_command))
     application.add_handler(CommandHandler("register_counselor", commands.register_counselor_command))
+    application.add_handler(CommandHandler("register_admin", commands.register_admin_command))
     application.add_handler(CommandHandler("help", commands.help_command))
+    # Admin helpers
+    application.add_handler(CommandHandler("pending", admin_features.pending_cases_command))
+    application.add_handler(CommandHandler("admin_pending", admin_features.pending_cases_command))
+    application.add_handler(CallbackQueryHandler(admin_features.handle_admin_callback, pattern=r"^adm_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, messages.handle_message))
 
 
