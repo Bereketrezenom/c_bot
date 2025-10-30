@@ -56,7 +56,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cmd.clearname_command(update, context)
         return
 
-    # Button: New problem -> prompt for text
+    # Button: Discuss -> prompt for text
+    if text == "💬 Discuss":
+        context.user_data['awaiting_problem_text'] = True
+        await update.message.reply_text(
+            "Hello! 👋 Feel free to share what's on your mind.\n\n"
+            "ሰላም! 👋 ወደ አእምሮህ የሚመጣውን በነጻነት አጋራ።\n\n"
+            "🔒 Remember: Everything you share is **anonymous** and **private**!\n"
+            "🔒 አስታውስ: የምታጋራው ነገር ሁሉ **የተደበቀ** እና **ግላዊ** ነው!",
+            reply_markup=build_main_menu(),
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Button: New problem -> prompt for text (for backward compatibility)
     if text == "🆕 New problem":
         context.user_data['awaiting_problem_text'] = True
         await update.message.reply_text(
@@ -84,6 +97,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if existing_case:
                 await update.message.reply_text(
                     "You already have an active case!\n\nTo view your case, tap '📋 My cases'.",
+                    reply_markup=build_main_menu()
                 )
             else:
                 case_id = service.create_case({
@@ -242,7 +256,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not case:
         # No case - suggest button
         await update.message.reply_text(
-            "Tap '🆕 New problem' below to submit your issue, or use `/discuss <your message>`.",
+            "Tap '💬 Discuss' below to start a conversation, or use `/discuss <your message>`.",
             parse_mode='Markdown',
             reply_markup=build_main_menu()
         )

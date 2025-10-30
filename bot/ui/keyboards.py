@@ -4,8 +4,13 @@ from telegram import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 
 def build_main_menu():
-    """For normal users: no persistent buttons (keyboard removed)."""
-    return ReplyKeyboardRemove()
+    """For normal users: show Discuss button only."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("💬 Discuss")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def build_counselor_menu() -> ReplyKeyboardMarkup:
